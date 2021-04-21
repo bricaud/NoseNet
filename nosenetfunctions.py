@@ -11,7 +11,6 @@ import numpy as np
 import random
 from scipy.sparse import csr_matrix, coo_matrix, lil_matrix
 import scipy
-import torch
 
 class OlfactoryModel():
     """
