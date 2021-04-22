@@ -1,4 +1,4 @@
-import olfaction as olf
+import nosenetfunctions as nosenetF
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -58,7 +58,7 @@ class MB_projection(nn.Module):
 		self.nb_proj_entries = params['NB_PROJ_ENTRIES']
 		self.hash_length = params['HASH_LENGTH']
 		self.weight = nn.Parameter(torch.Tensor(self.out_features, self.in_features), requires_grad=False)
-		self.OM = olf.OlfactoryModel(params)
+		self.OM = nosenetF.OlfactoryModel(params)
 		self.reset_parameters()
 
 	def reset_parameters(self):
