@@ -139,7 +139,7 @@ class OlfactoryModel():
                 pass
             else: assert False
     
-        return coo_matrix((data_array, (row_ind_array, col_ind_array)), shape=(N, NUM_KENYON)).tocsr()
+        return coo_matrix((data_array, (row_ind_array, col_ind_array)), shape=(N, NUM_KENYON))#.tocsr()
         
     def create_rand_proj_matrix(self):
         return self.__create_rand_proj_matrix()
@@ -225,7 +225,7 @@ class OlfactoryModel():
 
         else: assert False
 
-        return M.tocsr()
+        return M.tocoo() #M.tocsr()
     
     def infer_data(self, H):
         """
