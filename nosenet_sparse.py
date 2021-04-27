@@ -40,6 +40,43 @@ class PositiveLinear(nn.Module):
 			self.in_features, self.out_features, self.bias is not None
 		)
 
+
+class WTA(nn.Module):
+	"""
+	implement winner take all with pytorch
+	
+	parameters: 
+	k: number of top values to return
+	dim: dimension along which to perform the WTA
+
+	return a pytorch sparse coo tensor
+	"""
+	__constants__ = ['k','dim']
+	k: int
+	dim: int
+	def __init__(self, k, dim=1):
+		super(WTA, self).__init__()
+		self.k = k
+		self.dim = dim
+
+	def forward(self, x):
+		(valuesM, indicesM) = torch.topk(x, self.k, dim=self.dim)
+		nb_values = indicesM.shape[0]*indicesM.shape[1]
+		values = np.zeros((1,nb_values))
+		indices = np.zeros((2,nb_values))
+		row_len = indicesM.shape[1]
+		for row_idx in range(indicesM.shape[0]):
+			start = row_idx*row_len 
+			end = start + row_len
+			indices[1, start:end] = indicesM[row_idx,:]
+			indices[0, start:end] = np.repeat(row_idx,row_len)
+			values[0, start:end] = valuesM[row_idx,:]
+		return torch.sparse_coo_tensor(indices, values[0,:], size=x.shape, dtype=torch.float32)
+
+	def extra_repr(self):
+		return 'k={}, dim={}'.format(self.k, self.dim)
+
+
 class MB_projection(nn.Module):
 	""" 
 	MB projection Neural net
@@ -59,6 +96,7 @@ class MB_projection(nn.Module):
 		self.nb_proj_entries = params['NB_PROJ_ENTRIES']
 		self.hash_length = params['HASH_LENGTH']
 		self.OM = nosenetF.OlfactoryModel(params)
+		self.WTA = WTA(k=self.hash_length)
 		self.weight = nn.Parameter(torch.sparse_coo_tensor(size=(self.out_features, self.in_features)),
 									 requires_grad=False)
 		self.reset_parameters()
@@ -80,15 +118,19 @@ class MB_projection(nn.Module):
 		#x = F.linear(input,self.weight)
 		#print(input.shape,self.weight.shape)
 		x = torch.sparse.mm(self.weight, input.t()).t()
-		#x = x.T
-		coo = self.OM.MB_sparsify(x)
-		values = coo.data
-		indices = np.vstack((coo.row, coo.col))
-		#i = torch.LongTensor(indices)
-		#v = torch.FloatTensor(values)
-		#shape = coo.shape
-		#torch.sparse.FloatTensor(i, v, torch.Size(shape)).to_dense()
-		return torch.sparse_coo_tensor(indices, values, (coo.shape), dtype=torch.float32)
+		x = self.WTA(x)
+		return x
+
+		#coo = self.OM.MB_sparsify(x)
+		#tvalues = coo.data
+		#tindices = np.vstack((coo.row, coo.col))
+		#print(coo.shape)
+		#print(tvalues.shape)
+		#print(tindices.shape)
+		#print(x.shape)
+		#print(indices.shape, indices)
+		#print(values.shape, values)
+		#return torch.sparse_coo_tensor(indices, values[0,:], size=x.shape, dtype=torch.float32)
 
 	
 	def extra_repr(self):
@@ -104,6 +146,7 @@ class NoseNet(nn.Module):
 		super(NoseNet, self).__init__()
 		nb_features = params['NB_FEATURES'] * params['DIM_EXPLOSION_FACTOR']
 		self.fc1 = MB_projection(params)
+		#self.fc2 = WTA(params['HASH_LENGTH'])
 		self.fc2 = PositiveLinear(nb_features, params['NB_CLASSES'])
 
 	def forward(self, x):
