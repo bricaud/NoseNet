@@ -158,7 +158,7 @@ class NoseNet(nn.Module):
 		nb_features = params['NB_FEATURES'] * params['DIM_EXPLOSION_FACTOR']
 		self.fc1 = MB_projection(params)
 		#self.fc2 = WTA(params['HASH_LENGTH'])
-		self.fc2 = PositiveLinear(nb_features, params['NB_CLASSES'])
+		self.fc2 = PositiveLinear(nb_features, params['NB_CLASSES'],sparse=True)
 
 	def forward(self, x):
 		x = self.fc1(x)
