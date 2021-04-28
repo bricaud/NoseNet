@@ -82,7 +82,7 @@ class WTA(nn.Module):
 			indices[1, start:end] = indicesM[row_idx,:]
 			indices[0, start:end] = np.repeat(row_idx,row_len)
 			values[0, start:end] = valuesM[row_idx,:]
-		return torch.sparse_coo_tensor(indices, values[0,:], size=x.shape, dtype=torch.float32)
+		return torch.sparse_coo_tensor(indices, values[0,:], size=x.shape, dtype=torch.float32).to(x.device)
 
 	def extra_repr(self):
 		return 'k={}, dim={}'.format(self.k, self.dim)
@@ -128,7 +128,7 @@ class MB_projection(nn.Module):
 		
 		#x = F.linear(input,self.weight)
 		#print(input.shape,self.weight.shape)
-		x = torch.sparse.mm(self.weight, input.t()).t()
+		x = torch.sparse.mm(self.weight, input.t()).t().to(input.device)
 		x = self.WTA(x)
 		return x
 
