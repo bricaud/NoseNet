@@ -77,8 +77,8 @@ class WTA(nn.Module):
 		for row_idx in range(indicesM.shape[0]):
 			start = row_idx*row_len 
 			end = start + row_len
-			indicesM = indicesM.tocpu()
-			valuesM = valuesM.tocpu()
+			indicesM = indicesM.cpu()
+			valuesM = valuesM.cpu()
 			indices[1, start:end] = indicesM[row_idx,:]
 			indices[0, start:end] = np.repeat(row_idx,row_len)
 			values[0, start:end] = valuesM[row_idx,:]
