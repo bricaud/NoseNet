@@ -9,16 +9,23 @@ import numpy as np
 class PositiveLinear(nn.Module):
 	""" 
 	Linear layer with positive weights constraint.
+	Parameters:
+		in_features: input size
+		out_features: output size
+		sparse: whether to use a sparse multiplication, input must be a sparse coo tensor (default=False)
 
+	Bias is not used when sparse is True.
 	"""
-	__constants__ = ['in_features', 'out_features']
+	__constants__ = ['in_features', 'out_features', 'sparse']
 	in_features: int
 	out_features: int
+	sparse: bool
 	weight: torch.Tensor
-	def __init__(self, in_features, out_features):
+	def __init__(self, in_features, out_features, sparse=False):
 		super(PositiveLinear, self).__init__()
 		self.in_features = in_features
 		self.out_features = out_features
+		self.sparse = sparse
 		self.weight = nn.Parameter(torch.Tensor(out_features, in_features))
 		self.bias = nn.Parameter(torch.Tensor(out_features))
 		self.reset_parameters()
@@ -33,7 +40,9 @@ class PositiveLinear(nn.Module):
 
 	def forward(self, input):
 		self.weight.data = self.weight.data.clamp(min=0)
-		return F.linear(input, self.weight, self.bias)#.exp())
+		if self.sparse:
+			return torch.sparse.mm(input, self.weight.t())
+		return F.linear(input, self.weight, self.bias)
 	
 	def extra_repr(self):
 		return 'in_features={}, out_features={}, bias={}'.format(
