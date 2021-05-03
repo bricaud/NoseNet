@@ -27,16 +27,21 @@ class PositiveLinear(nn.Module):
 		self.out_features = out_features
 		self.sparse = sparse
 		self.weight = nn.Parameter(torch.Tensor(out_features, in_features))
-		self.bias = nn.Parameter(torch.Tensor(out_features))
+		if sparse: # no bias when sparse
+			self.register_parameter('bias', None)
+		else:
+			self.bias = nn.Parameter(torch.Tensor(out_features))
+			
 		self.reset_parameters()
 
 	def reset_parameters(self):
 		# weights
 		nn.init.kaiming_uniform_(self.weight, a=math.sqrt(5))
 		# bias
-		fan_in, _ = nn.init._calculate_fan_in_and_fan_out(self.weight)
-		bound = 1 / math.sqrt(fan_in)
-		nn.init.uniform_(self.bias, -bound, bound)
+		if self.bias is not None:
+			fan_in, _ = nn.init._calculate_fan_in_and_fan_out(self.weight)
+			bound = 1 / math.sqrt(fan_in)
+			nn.init.uniform_(self.bias, -bound, bound)
 
 	def forward(self, input):
 		self.weight.data = self.weight.data.clamp(min=0)
@@ -45,8 +50,8 @@ class PositiveLinear(nn.Module):
 		return F.linear(input, self.weight, self.bias)
 	
 	def extra_repr(self):
-		return 'in_features={}, out_features={}, bias={}'.format(
-			self.in_features, self.out_features, self.bias is not None
+		return 'in_features={}, out_features={}, bias={}, sparse={}'.format(
+			self.in_features, self.out_features, self.bias is not None, self.sparse
 		)
 
 
@@ -156,9 +161,11 @@ class NoseNet(nn.Module):
 	def __init__(self, params):
 		super(NoseNet, self).__init__()
 		nb_features = params['NB_FEATURES'] * params['DIM_EXPLOSION_FACTOR']
+		nb_classes = params['NB_CLASSES']
+		self.sparse_hebbian = params['sparse_hebbian']
 		self.fc1 = MB_projection(params)
 		#self.fc2 = WTA(params['HASH_LENGTH'])
-		self.fc2 = PositiveLinear(nb_features, params['NB_CLASSES'],sparse=True)
+		self.fc2 = PositiveLinear(nb_features, nb_classes, sparse=self.sparse_hebbian)
 
 	def forward(self, x):
 		x = self.fc1(x)
