@@ -174,3 +174,30 @@ class NoseNet(nn.Module):
 		#print(x)
 		#x = torch.sigmoid(x)
 		return x
+
+class NoseNetDeep(nn.Module):
+	"""
+	Nosenet neural network
+	"""
+	def __init__(self, params):
+		super(NoseNetDeep, self).__init__()
+		nb_features = params['NB_FEATURES'] * params['DIM_EXPLOSION_FACTOR']
+		nb_classes = params['NB_CLASSES']
+		self.sparse_hebbian = params['sparse_hebbian']
+		self.fc1 = MB_projection(params)
+		#self.fc2 = WTA(params['HASH_LENGTH'])
+		reduction1 = max((nb_features//400, nb_classes))
+		reduction2 = max((reduction1//2, nb_classes))
+		self.fc2 = PositiveLinear(nb_features, reduction1, sparse=self.sparse_hebbian)
+		self.fc3 = nn.Linear(reduction1, reduction2)
+		self.fc4 = nn.Linear(reduction2, nb_classes)
+
+	def forward(self, x):
+		x = self.fc1(x)
+		#print(x)
+		x = F.relu(self.fc2(x))
+		x = F.relu(self.fc3(x))
+		x = F.softmax(self.fc4(x))
+		#print(x)
+		#x = torch.sigmoid(x)
+		return x
