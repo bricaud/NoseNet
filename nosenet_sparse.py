@@ -191,13 +191,15 @@ class NoseNetDeep(nn.Module):
 		self.fc2 = PositiveLinear(nb_features, reduction1, sparse=self.sparse_hebbian)
 		self.fc3 = nn.Linear(reduction1, reduction2)
 		self.fc4 = nn.Linear(reduction2, nb_classes)
+		#self.softmax = nn.Softmax(dim=1)
 
 	def forward(self, x):
 		x = self.fc1(x)
 		#print(x)
 		x = F.relu(self.fc2(x))
 		x = F.relu(self.fc3(x))
-		x = F.softmax(self.fc4(x))
+		x = self.fc4(x)
+		#x = self.softmax(x)
 		#print(x)
 		#x = torch.sigmoid(x)
 		return x
