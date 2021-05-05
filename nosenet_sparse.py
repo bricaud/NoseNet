@@ -199,7 +199,7 @@ class NoseNetDeep(nn.Module):
 		#print(x)
 		x = F.relu(self.hebbian(x))
 		x = F.relu(self.fc3(x))
-		x = self.dropout(x)
+		#x = self.dropout(x)
 		x = self.fc4(x)
 		#x = self.softmax(x)
 		#print(x)
