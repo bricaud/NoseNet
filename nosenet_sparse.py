@@ -186,7 +186,7 @@ class NoseNetDeep(nn.Module):
 		self.sparse_hebbian = params['sparse_hebbian']
 		self.projection = MB_projection(params)
 		#self.fc2 = WTA(params['HASH_LENGTH'])
-		reduction1 = max((nb_features//400, nb_classes))
+		reduction1 = max((nb_features//100, nb_classes))
 		reduction2 = max((reduction1//2, nb_classes))
 		self.hebbian = PositiveLinear(nb_features, reduction1, sparse=self.sparse_hebbian)
 		self.fc3 = nn.Linear(reduction1, reduction2)
