@@ -163,14 +163,15 @@ class NoseNet(nn.Module):
 		nb_features = params['NB_FEATURES'] * params['DIM_EXPLOSION_FACTOR']
 		nb_classes = params['NB_CLASSES']
 		self.sparse_hebbian = params['sparse_hebbian']
-		self.fc1 = MB_projection(params)
+		self.projection = MB_projection(params)
 		#self.fc2 = WTA(params['HASH_LENGTH'])
-		self.fc2 = PositiveLinear(nb_features, nb_classes, sparse=self.sparse_hebbian)
+		self.hebbian = PositiveLinear(nb_features, nb_classes, sparse=self.sparse_hebbian)
 
 	def forward(self, x):
-		x = self.fc1(x)
+		x = torch.sigmoid(x)
+		x = self.projection(x)
 		#print(x)
-		x = self.fc2(x)
+		x = self.hebbian(x)
 		#print(x)
 		#x = torch.sigmoid(x)
 		return x
