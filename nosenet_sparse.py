@@ -168,7 +168,7 @@ class NoseNet(nn.Module):
 		self.hebbian = PositiveLinear(nb_features, nb_classes, sparse=self.sparse_hebbian)
 
 	def forward(self, x):
-		x = torch.sigmoid(x)
+		x = x**(1/10)
 		x = self.projection(x)
 		#print(x)
 		x = self.hebbian(x)
