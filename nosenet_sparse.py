@@ -185,20 +185,25 @@ class NoseNetDeep(nn.Module):
 		nb_features = params['NB_FEATURES'] * params['DIM_EXPLOSION_FACTOR']
 		nb_classes = params['NB_CLASSES']
 		self.sparse_hebbian = params['sparse_hebbian']
-		self.projection = MB_projection(params)
+		#self.projection = MB_projection(params)
 		#self.fc2 = WTA(params['HASH_LENGTH'])
 		reduction1 = max((nb_features//100, nb_classes))
 		reduction2 = max((reduction1//2, nb_classes))
-		self.hebbian = PositiveLinear(nb_features, reduction1, sparse=self.sparse_hebbian)
+		#self.hebbian = PositiveLinear(nb_features, reduction1, sparse=self.sparse_hebbian)
+		#
+		self.nosenet_params = params.copy()
+		self.nosenet_params['NB_CLASSES'] = reduction1
+		self.nosenet = NoseNet(self.nosenet_params)
+		#
 		self.fc3 = nn.Linear(reduction1, reduction2)
 		self.fc4 = nn.Linear(reduction2, nb_classes)
 		self.dropout = nn.Dropout(0.2)
 		#self.softmax = nn.Softmax(dim=1)
 
 	def forward(self, x):
-		x = self.projection(x)
+		#x = self.projection(x)
 		#print(x)
-		x = F.relu(self.hebbian(x))
+		x = F.relu6(self.nosenet(x))
 		x = F.relu(self.fc3(x))
 		#x = self.dropout(x)
 		x = self.fc4(x)
