@@ -25,7 +25,7 @@ class OlfactoryModel():
     
     'DIM_EXPLOSION_FACTOR': int, default=10
         Factor of the increasing dimensionality.
-        Dimensionality of the projection is nb_features * dim_explosion_factor
+        Dimensionality of the projection is MB_input_size * dim_explosion_factor
     
     'PROJECTION_TYPE': string, default="SB12"
         Projection type. Possible options: SB and DG.
@@ -56,19 +56,34 @@ class OlfactoryModel():
     """
     
     def __init__(self, params):
-        self.nb_features = params['NB_FEATURES']
+        if params['AL_projection'] == None:
+            self.MB_input_size = params['NB_FEATURES']
+        else:
+            self.AL_input_size = params['NB_FEATURES']
+            self.AL_output_size = params['NB_FEATURES']//10
+            self.MB_input_size = self.AL_output_size
         self.dim_explosion_factor = params['DIM_EXPLOSION_FACTOR']
-        self.projection = params['PROJECTION_TYPE']
+        self.projection_type = params['PROJECTION_TYPE']
         self.nb_proj_entries = params['NB_PROJ_ENTRIES']
         self.hash_length = params['HASH_LENGTH']
         self.WTA = params['WTA']
-        self.projection_dim = self.nb_features * self.dim_explosion_factor
+        self.projection_dim = self.MB_input_size * self.dim_explosion_factor
         self.Hebbian_weights = scipy.sparse.lil_matrix((
-                        self.nb_features * self.dim_explosion_factor, self.nb_features))
+                        self.MB_input_size * self.dim_explosion_factor, self.MB_input_size))
         self.Hebbian_batch_weight = 0
-        self.__M = self.__create_rand_proj_matrix()
+        self.__MB = self._create_rand_proj_matrix(self.projection_dim, self.MB_input_size, 
+            params['PROJECTION_TYPE'], params['NB_PROJ_ENTRIES'])
+        self.__AL = self._create_rand_proj_matrix(self.MB_input_size, self.AL_input_size, 'DG')
     
-    def MB_projection(self, X, M):
+    def AL_projection(self, X):
+        """
+        Projection from the input (odors) to the Antenna lobe
+        This is a random projection with dimension reduction
+        """
+        P = self.__AL.dot(X.T).T      
+        return P
+
+    def MB_projection(self, X):
         """
         Compute projection
         
@@ -79,7 +94,7 @@ class OlfactoryModel():
             
         Returns
         -------
-        Projection matrix of shape (n_samples, self.nb_features * self.dim_explosion_factor)
+        Projection matrix of shape (n_samples, self.MB_input_size * self.dim_explosion_factor)
         """
         
         NUM_KENYON = X.shape[1] * self.dim_explosion_factor
@@ -87,7 +102,7 @@ class OlfactoryModel():
         
         #P = np.dot(X,np.transpose(self.__M)) # N x NUM_KENYON
         #P = self.__M.dot(X.T).T
-        P = M.dot(X.T).T
+        P = self.__MB.dot(X.T).T
 
         assert P.shape[0] == N
         assert P.shape[1] ==  NUM_KENYON        
@@ -141,89 +156,104 @@ class OlfactoryModel():
     
         return coo_matrix((data_array, (row_ind_array, col_ind_array)), shape=(N, NUM_KENYON))#.tocsr()
         
-    def create_rand_proj_matrix(self):
-        return self.__create_rand_proj_matrix()
+    def create_rand_proj_matrix(self, projection_module):
+        if projection_module == 'AL':
+            nb_cols = self.AL_input_size
+            nb_rows = self.MB_input_size
+            projection_type = 'DG'  # gaussian random projection
+            nb_proj_entries = None
+        elif projection_module == 'MB':
+            nb_cols = self.MB_input_size
+            nb_rows = self.projection_dim
+            projection_type = self.projection_type
+            nb_proj_entries = self.nb_proj_entries
+        else: 
+            raise ValueError('Wrong projection module name: {}'.format(projection_module))
+        return self._create_rand_proj_matrix(nb_rows, nb_cols, projection_type, nb_proj_entries)
 
-    def __create_rand_proj_matrix(self):
+
+    def _create_rand_proj_matrix(self, nb_rows, nb_cols, projection_type, nb_proj_entries=None):
         """ 
         Creates a random projection matrix of size NUM_KENYON by NUM_PNS. 
         """
     
-        num_sample = self.nb_proj_entries
-        assert num_sample <= self.nb_features
-        projection = self.projection
-        # initialize the projection matrix.
-        #M = np.zeros((self.projection_dim,self.nb_features), dtype=bool)
-        M = lil_matrix((self.projection_dim,self.nb_features), dtype=bool)
+        if projection_type != 'DG': # DG does not need nb_proj_entries
+            num_sample = nb_proj_entries
+            assert num_sample <= nb_cols
+            ### TODO: in some configurations M is not a matrix with booleans 
+            M = lil_matrix((nb_rows,nb_cols), dtype=bool)
+
             
         # Create a sparse, binary random projection matrix.
-        if projection == "SB":
-            for row in range(self.projection_dim):
+        if projection_type == "SB":
+            for row in range(nb_rows):
                 # Sample NUM_SAMPLE random indices, set these to 1.
-                for idx in random.sample(range(self.nb_features),num_sample):
+                for idx in random.sample(range(nb_cols),num_sample):
                     M[row,idx] = 1
             # Make sure I didn't screw anything up!
             #assert sum(M[row,:]) == num_sample  
 
         # Create a sparse, binary random projection matrix.
         # a feature can be chosen multiple times (choice with replacement)
-        elif projection =="SS":
-            for row in range(self.projection_dim):
-                for idx in random.choices(range(self.nb_features),k=num_sample):
+        elif projection_type =="SS":
+            for row in range(nb_rows):
+                for idx in random.choices(range(nb_cols),k=num_sample):
                     M[row,idx] = 1
 
 
         # Create a sparse, binary random projection matrix.
         # a feature can be chosen multiple times + k is the mean value of connections
-        elif projection == "RK":
-            for trial in range(self.projection_dim*num_sample):
-                row = random.randrange(self.projection_dim)
-                col = random.randrange(self.nb_features)
+        elif projection_type == "RK":
+            for trial in range(nb_rows*num_sample):
+                row = random.randrange(nb_rows)
+                col = random.randrange(nb_cols)
                 M[row,col] += 1
 
 
         # Create a sparse, binary random projection matrix, with positive and negative values.
         # a feature can be chosen multiple times + k is the mean value of connections
-        elif projection == "RL":
-            for trial in range(self.projection_dim*num_sample):
-                row = random.randrange(self.projection_dim)
-                col = random.randrange(self.nb_features)
+        elif projection_type == "RL":
+            for trial in range(nb_rows*num_sample):
+                row = random.randrange(nb_rows)
+                col = random.randrange(nb_cols)
                 M[row,col] += random.choice([-1,1])
 
         # Matrix entries are positive numbers between 0 and 1
-        elif projection == "SR": 
-            for row in range(self.projection_dim):
-                for idx in random.sample(range(self.nb_features),num_sample):
+        elif projection_type == "SR": 
+            for row in range(nb_rows):
+                for idx in random.sample(range(nb_cols),num_sample):
                     M[row,idx] = 0.1 * np.random.randn() +1 #1
 
      
         # Matrix entries are binary, 
         # random number of non-zeros (fluctuating around num_sample)
-        elif projection == "SX":
+        elif projection_type == "SX":
             delta = 4
             min_val = max([num_sample - delta,1])
-            max_val = min([num_sample + delta, self.nb_features])          
-            for row in range(self.projection_dim):
+            max_val = min([num_sample + delta, nb_cols])          
+            for row in range(nb_rows):
                 num_sample = np.random.randint(min_val, max_val + 1)
-                for idx in random.sample(range(self.nb_features),num_sample):
+                for idx in random.sample(range(nb_cols),num_sample):
                     M[row,idx] = 1 #np.random.randn() #1
         
         # Matrix entries are positive integers between 0 and 1,
         # random number of non-zeros (fluctuating around num_sample)
-        elif projection == "SZ":
+        elif projection_type == "SZ":
             delta = 4
             min_val = max([num_sample - delta,1])
-            max_val = min([num_sample + delta, self.nb_features])            
-            for row in range(self.projection_dim):
+            max_val = min([num_sample + delta, nb_cols])            
+            for row in range(nb_rows):
                 num_sample = np.random.randint(min_val, max_val + 1)
-                for idx in random.sample(range(self.nb_features),num_sample):
+                for idx in random.sample(range(nb_cols),num_sample):
                     M[row,idx] = np.random.randint(1, num_sample + 1)
 
         # Create a dense, Gaussian random projection matrix.
-        elif projection == "DG":
-            M = np.random.randn(self.projection_dim, self.nb_features)
+        elif projection_type == "DG":
+            M = np.random.randn(nb_rows, nb_cols)
+            return M # M is a dense matrix
 
-        else: assert False
+        else:
+            ValueError('Wrong projection type: {}'.format(projection_type))
 
         return M.tocoo() #M.tocsr()
     
@@ -238,7 +268,7 @@ class OlfactoryModel():
             
         Returns
         -------
-        Data matrix of shape (n_samples, self.nb_features * self.dim_explosion_factor)
+        Data matrix of shape (n_samples, nb_cols * self.dim_explosion_factor)
         X: {dense matrix}
         """
 

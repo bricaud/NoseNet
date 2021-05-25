@@ -5,5 +5,6 @@ params = {'DIM_EXPLOSION_FACTOR': 20,
           'NB_FEATURES': None,
           'NB_CLASSES': None,
           'WTA': 'top',
-          'sparse_hebbian': False
+          'sparse_hebbian': False,
+          'AL_projection': False
          }

@@ -107,33 +107,50 @@ class MB_projection(nn.Module):
 	weight: torch.Tensor
 	def __init__(self, params):
 		super(MB_projection, self).__init__()
+		self.AL_projection = params['AL_projection']
 		self.in_features = params['NB_FEATURES']
+		if self.AL_projection == False:
+			self.MB_input_size = self.in_features
+		else:
+			self.AL_input_size = self.in_features
+			self.AL_output_size = self.in_features//10
+			self.MB_input_size = self.AL_output_size
+
+		#self.in_features = params['NB_FEATURES']
 		self.out_features = params['NB_FEATURES'] * params['DIM_EXPLOSION_FACTOR']
+
 		self.nb_proj_entries = params['NB_PROJ_ENTRIES']
 		self.hash_length = params['HASH_LENGTH']
 		self.OM = nosenetF.OlfactoryModel(params)
 		self.WTA = WTA(k=self.hash_length)
-		self.weight = nn.Parameter(torch.sparse_coo_tensor(size=(self.out_features, self.in_features)),
+		self.MBweight = nn.Parameter(torch.sparse_coo_tensor(size=(self.out_features, self.MB_input_size)),
 									 requires_grad=False)
+		if self.AL_projection:
+			self.ALweight = nn.Parameter(torch.empty(self.AL_output_size, self.AL_input_size), requires_grad=False)
 		self.reset_parameters()
 
 	def reset_parameters(self):
-		coo = self.OM.create_rand_proj_matrix()
+		if self.AL_projection:
+			self.ALweight.data = torch.from_numpy(self.OM.create_rand_proj_matrix('AL')).type(torch.FloatTensor)
+		coo = self.OM.create_rand_proj_matrix('MB')
 		values = coo.data
 		indices = np.vstack((coo.row, coo.col))
 		#i = torch.LongTensor(indices)
 		#v = torch.FloatTensor(values)
 		#shape = coo.shape
 		#torch.sparse.FloatTensor(i, v, torch.Size(shape)).to_dense()
-		self.weight.data = torch.sparse_coo_tensor(indices, values, (self.out_features,self.in_features), dtype=torch.float32)
+		self.MBweight.data = torch.sparse_coo_tensor(indices, values, (self.out_features,self.MB_input_size), dtype=torch.float32)
 
-	def forward(self, input):
+	def forward(self, x):
 		#x = self.OM.MB_projection(input, self.weight)
 		#P = M.dot(X.T).T
 		
 		#x = F.linear(input,self.weight)
 		#print(input.shape,self.weight.shape)
-		x = torch.sparse.mm(self.weight, input.t()).t().to(input.device)
+		if self.AL_projection:
+			x = torch.matmul(self.ALweight, x.t()).t()
+		#print(x.shape, self.MBweight.shape)
+		x = torch.sparse.mm(self.MBweight, x.t()).t().to(x.device)
 		x = self.WTA(x)
 		return x
 
