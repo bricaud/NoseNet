@@ -116,8 +116,8 @@ class MB_projection(nn.Module):
 			self.AL_output_size = self.in_features//10
 			self.MB_input_size = self.AL_output_size
 
-		#self.in_features = params['NB_FEATURES']
-		self.out_features = params['NB_FEATURES'] * params['DIM_EXPLOSION_FACTOR']
+		#self.out_features = params['NB_FEATURES'] * params['DIM_EXPLOSION_FACTOR']
+		self.out_features = self.MB_input_size * params['DIM_EXPLOSION_FACTOR']
 
 		self.nb_proj_entries = params['NB_PROJ_ENTRIES']
 		self.hash_length = params['HASH_LENGTH']
@@ -149,6 +149,7 @@ class MB_projection(nn.Module):
 		#print(input.shape,self.weight.shape)
 		if self.AL_projection:
 			x = torch.matmul(self.ALweight, x.t()).t()
+			# TODO: add nonlinearity
 		#print(x.shape, self.MBweight.shape)
 		x = torch.sparse.mm(self.MBweight, x.t()).t().to(x.device)
 		x = self.WTA(x)
