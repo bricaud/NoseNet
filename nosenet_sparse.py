@@ -150,23 +150,13 @@ class MB_projection(nn.Module):
 		if self.AL_projection:
 			x = torch.matmul(self.ALweight, x.t()).t()
 			# TODO: add nonlinearity
+			x = F.sigmoid(x)
 		#print(x.shape, self.MBweight.shape)
 		x = torch.sparse.mm(self.MBweight, x.t()).t().to(x.device)
 		x = self.WTA(x)
 		return x
 
-		#coo = self.OM.MB_sparsify(x)
-		#tvalues = coo.data
-		#tindices = np.vstack((coo.row, coo.col))
-		#print(coo.shape)
-		#print(tvalues.shape)
-		#print(tindices.shape)
-		#print(x.shape)
-		#print(indices.shape, indices)
-		#print(values.shape, values)
-		#return torch.sparse_coo_tensor(indices, values[0,:], size=x.shape, dtype=torch.float32)
 
-	
 	def extra_repr(self):
 		return 'in_features={}, out_features={}, nb_proj_entries={}, hash_length={}'.format(
 			self.in_features, self.out_features, self.nb_proj_entries, self.hash_length
