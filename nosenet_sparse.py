@@ -109,11 +109,12 @@ class MB_projection(nn.Module):
 		super(MB_projection, self).__init__()
 		self.AL_projection = params['AL_projection']
 		self.in_features = params['NB_FEATURES']
+		self.nb_PNs = params['NB_PNS']
 		if self.AL_projection == False:
 			self.MB_input_size = self.in_features
 		else:
 			self.AL_input_size = self.in_features
-			self.AL_output_size = self.in_features//10
+			self.AL_output_size = self.nb_PNs
 			self.MB_input_size = self.AL_output_size
 
 		#self.out_features = params['NB_FEATURES'] * params['DIM_EXPLOSION_FACTOR']
@@ -150,7 +151,7 @@ class MB_projection(nn.Module):
 		if self.AL_projection:
 			x = torch.matmul(self.ALweight, x.t()).t()
 			# TODO: add nonlinearity
-			x = F.sigmoid(x)
+			#x = F.sigmoid(x)
 		#print(x.shape, self.MBweight.shape)
 		x = torch.sparse.mm(self.MBweight, x.t()).t().to(x.device)
 		x = self.WTA(x)
@@ -168,7 +169,7 @@ class NoseNet(nn.Module):
 	"""
 	def __init__(self, params):
 		super(NoseNet, self).__init__()
-		nb_features = params['NB_FEATURES'] * params['DIM_EXPLOSION_FACTOR']
+		nb_features = params['NB_PNS'] * params['DIM_EXPLOSION_FACTOR']
 		nb_classes = params['NB_CLASSES']
 		self.sparse_hebbian = params['sparse_hebbian']
 		self.projection = MB_projection(params)
