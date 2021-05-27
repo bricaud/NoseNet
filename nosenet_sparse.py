@@ -148,7 +148,7 @@ class MB_projection(nn.Module):
 		if self.AL_projection:
 			x = torch.matmul(self.ALweight, x.t()).t()
 			# TODO: add nonlinearity
-			x = F.sigmoid(x)
+			x = torch.sigmoid(x)
 		#print(x.shape, self.MBweight.shape)
 		x = torch.sparse.mm(self.MBweight, x.t()).t().to(x.device)
 		return x

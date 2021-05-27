@@ -35,8 +35,8 @@ class OlfactoryModel():
     'NB_PROJ_ENTRIES': int, default=6
         Number of combinations of input features in the MB, for each Kenyon cell.
         
-    'HASH_LENGTH': int, default=32
-        Length of hash encoding. Number of non-zero values in hash encoding (output of the MB).
+    'MB_ACTIVITY_RATIO': float,
+        Ratio of number of active cell in the MB should be around 10%
     
     'WTA': string, default='top'
         WTA stands for Winner Takes All.
@@ -65,9 +65,9 @@ class OlfactoryModel():
         self.dim_explosion_factor = params['DIM_EXPLOSION_FACTOR']
         self.projection_type = params['PROJECTION_TYPE']
         self.nb_proj_entries = params['NB_PROJ_ENTRIES']
-        self.hash_length = params['HASH_LENGTH']
         self.WTA = params['WTA']
         self.projection_dim = self.MB_input_size * self.dim_explosion_factor
+        self.hash_length = int(params['MB_ACTIVITY_RATIO'] * self.projection_dim)      
         self.Hebbian_weights = scipy.sparse.lil_matrix((
                         self.MB_input_size * self.dim_explosion_factor, self.MB_input_size))
         self.Hebbian_batch_weight = 0
