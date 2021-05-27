@@ -93,70 +93,81 @@ class WTA(nn.Module):
 		return 'active_outputs={}, dim={}'.format(self.active_outputs, self.dim)
 
 
+class AL_projection(nn.Module):
+	""" 
+	MB projection Neural net
+	Perform the projection into the mushroom body.
+	No learning is involved in this layer.
+	"""
+	__constants__ = ['in_features', 'out_features']
+	in_features: int
+	out_features: int
+	weight: torch.Tensor
+	def __init__(self, in_features, out_features):
+		super(AL_projection, self).__init__()
+		self.in_features = in_features
+		self.out_features = out_features
+
+		self.ALweight = nn.Parameter(torch.empty(self.out_features, self.in_features), requires_grad=False)
+		self.reset_parameters()
+
+	def reset_parameters(self):
+		AL = nosenetF.proj_matrix(self.out_features, self.in_features, 'DG')
+		#print(np.isnan(np.sum(AL.numpy())))
+		self.ALweight.data = torch.from_numpy(AL).type(torch.FloatTensor)
+
+	def forward(self, x):
+		x = torch.matmul(self.ALweight, x.t()).t()
+		return x
+
+
+	def extra_repr(self):
+		return 'in_features={}, out_features={}'.format(
+			self.in_features, self.out_features)
+
+
 class MB_projection(nn.Module):
 	""" 
 	MB projection Neural net
 	Perform the projection into the mushroom body.
 	No learning is involved in this layer.
 	"""
-	__constants__ = ['in_features', 'out_features', 'nb_proj_entries']
+	__constants__ = ['in_features', 'out_features', 'projection_type', 'nb_proj_entries']
 	in_features: int
 	out_features: int
+	projection_type: str
 	nb_proj_entries: int
 	weight: torch.Tensor
-	def __init__(self, params):
+	def __init__(self, in_features, dim_explosion, projection_type, nb_proj_entries):
 		super(MB_projection, self).__init__()
-		self.AL_projection = params['AL_projection']
-		self.in_features = params['NB_FEATURES']
-		self.nb_PNs = int(self.in_features * params['PNS_REDUCTION_FACTOR'])
-		if self.AL_projection == False:
-			self.MB_input_size = self.in_features
-		else:
-			self.AL_input_size = self.in_features
-			self.AL_output_size = self.nb_PNs
-			self.MB_input_size = self.AL_output_size
+		self.in_features = in_features	
+		self.dim_explosion = dim_explosion
+		self.out_features = self.in_features * self.dim_explosion
+		self.projection_type = projection_type
+		self.nb_proj_entries = nb_proj_entries
 
-		#self.out_features = params['NB_FEATURES'] * params['DIM_EXPLOSION_FACTOR']
-		self.out_features = self.MB_input_size * params['DIM_EXPLOSION_FACTOR']
-
-		self.nb_proj_entries = params['NB_PROJ_ENTRIES']
-		self.OM = nosenetF.OlfactoryModel(params)
-		self.MBweight = nn.Parameter(torch.sparse_coo_tensor(size=(self.out_features, self.MB_input_size)),
+		self.MBweight = nn.Parameter(torch.sparse_coo_tensor(size=(self.out_features, self.in_features)),
 									 requires_grad=False)
-		if self.AL_projection:
-			self.ALweight = nn.Parameter(torch.empty(self.AL_output_size, self.AL_input_size), requires_grad=False)
 		self.reset_parameters()
 
 	def reset_parameters(self):
-		if self.AL_projection:
-			self.ALweight.data = torch.from_numpy(self.OM.create_rand_proj_matrix('AL')).type(torch.FloatTensor)
-		coo = self.OM.create_rand_proj_matrix('MB')
-		values = coo.data
-		indices = np.vstack((coo.row, coo.col))
+		MB = nosenetF.proj_matrix(self.out_features, self.in_features, self.projection_type, self.nb_proj_entries)
+		values = MB.data
+		indices = np.vstack((MB.row, MB.col))
 		#i = torch.LongTensor(indices)
 		#v = torch.FloatTensor(values)
 		#shape = coo.shape
 		#torch.sparse.FloatTensor(i, v, torch.Size(shape)).to_dense()
-		self.MBweight.data = torch.sparse_coo_tensor(indices, values, (self.out_features,self.MB_input_size), dtype=torch.float32)
+		self.MBweight.data = torch.sparse_coo_tensor(indices, values, (self.out_features, self.in_features), dtype=torch.float32)
 
 	def forward(self, x):
-		#x = self.OM.MB_projection(input, self.weight)
-		#P = M.dot(X.T).T
-		
-		#x = F.linear(input,self.weight)
-		#print(input.shape,self.weight.shape)
-		if self.AL_projection:
-			x = torch.matmul(self.ALweight, x.t()).t()
-			# TODO: add nonlinearity
-			x = torch.sigmoid(x)
-		#print(x.shape, self.MBweight.shape)
 		x = torch.sparse.mm(self.MBweight, x.t()).t().to(x.device)
 		return x
 
 
 	def extra_repr(self):
-		return 'in_features={}, out_features={}, nb_proj_entries={}, AL_layer={}'.format(
-			self.in_features, self.out_features, self.nb_proj_entries, self.AL_projection
+		return 'in_features={}, out_features={}, projection_type={}, nb_proj_entries={}'.format(
+			self.in_features, self.out_features, self.projection_type, self.nb_proj_entries
 		)
 
 class NoseNet(nn.Module):
@@ -165,21 +176,46 @@ class NoseNet(nn.Module):
 	"""
 	def __init__(self, params):
 		super(NoseNet, self).__init__()
-		nb_out_features = int(params['NB_FEATURES'] * params['PNS_REDUCTION_FACTOR']) * params['DIM_EXPLOSION_FACTOR']
+		self.in_features = params['NB_FEATURES']
 		nb_classes = params['NB_CLASSES']
 		self.sparse_hebbian = params['sparse_hebbian']
-		self.hash_length = int(params['MB_ACTIVITY_RATIO'] * nb_out_features)
-		self.MB_projection = MB_projection(params)
+		self.AL_requested = params['AL_projection']
+
+		# AL projection
+		if self.AL_requested:
+			# create AL
+			self.AL_input_size = self.in_features
+			nb_PNs = int(self.in_features * params['PNS_REDUCTION_FACTOR'])
+			self.AL_output_size = nb_PNs
+			self.MB_input_size = self.AL_output_size
+			self.AL_projection = AL_projection(self.AL_input_size, self.AL_output_size)
+		else:
+			self.MB_input_size = self.in_features
+		self.out_features = self.MB_input_size * params['DIM_EXPLOSION_FACTOR']
+		self.MB_projection = MB_projection(self.MB_input_size, params['DIM_EXPLOSION_FACTOR'],
+											params['PROJECTION_TYPE'],params['NB_PROJ_ENTRIES'])
 		#self.fc2 = WTA(params['HASH_LENGTH'])
+		self.hash_length = int(params['MB_ACTIVITY_RATIO'] * self.out_features)
 		self.WTA = WTA(active_outputs=self.hash_length)
-		self.hebbian = PositiveLinear(nb_out_features, nb_classes, sparse=self.sparse_hebbian)
+		self.hebbian = PositiveLinear(self.out_features, nb_classes, sparse=self.sparse_hebbian)
 
 	def forward(self, x):
 		#x = x**(1/10)
+		if self.AL_requested:
+			#print('input',x.shape)
+			#print(np.isnan(np.sum(x.numpy())))
+			x = self.AL_projection(x)
+			# nonlinearity
+			x = torch.sigmoid(x)
+		#print('after AL', x.shape)
+		#print(np.isnan(np.sum(x.numpy())))
 		x = self.MB_projection(x)
+		#print('after MB', x.shape)
+		#print(np.isnan(np.sum(x.numpy())))
 		x = self.WTA(x)
-		#print(x)
+		#print('after WTA', x.shape)
 		x = self.hebbian(x)
+		#print('after hebbian', x.shape)
 		#print(x)
 		#x = torch.sigmoid(x)
 		return x
@@ -190,7 +226,7 @@ class NoseNetDeep(nn.Module):
 	"""
 	def __init__(self, params):
 		super(NoseNetDeep, self).__init__()
-		nb_features = params['NB_FEATURES'] * params['DIM_EXPLOSION_FACTOR']
+		#nb_features = params['NB_FEATURES'] * params['DIM_EXPLOSION_FACTOR']
 		nb_classes = params['NB_CLASSES']
 		self.sparse_hebbian = params['sparse_hebbian']
 		#self.projection = MB_projection(params)

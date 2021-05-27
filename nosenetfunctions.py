@@ -71,9 +71,9 @@ class OlfactoryModel():
         self.Hebbian_weights = scipy.sparse.lil_matrix((
                         self.MB_input_size * self.dim_explosion_factor, self.MB_input_size))
         self.Hebbian_batch_weight = 0
-        self.__MB = self._create_rand_proj_matrix(self.projection_dim, self.MB_input_size, 
+        self.__MB = proj_matrix(self.projection_dim, self.MB_input_size, 
             params['PROJECTION_TYPE'], params['NB_PROJ_ENTRIES'])
-        self.__AL = self._create_rand_proj_matrix(self.MB_input_size, self.AL_input_size, 'DG')
+        self.__AL = proj_matrix(self.MB_input_size, self.AL_input_size, 'DG')
     
     def AL_projection(self, X):
         """
@@ -169,93 +169,8 @@ class OlfactoryModel():
             nb_proj_entries = self.nb_proj_entries
         else: 
             raise ValueError('Wrong projection module name: {}'.format(projection_module))
-        return self._create_rand_proj_matrix(nb_rows, nb_cols, projection_type, nb_proj_entries)
+        return proj_matrix(nb_rows, nb_cols, projection_type, nb_proj_entries)
 
-
-    def _create_rand_proj_matrix(self, nb_rows, nb_cols, projection_type, nb_proj_entries=None):
-        """ 
-        Creates a random projection matrix of size NUM_KENYON by NUM_PNS. 
-        """
-    
-        if projection_type != 'DG': # DG does not need nb_proj_entries
-            num_sample = nb_proj_entries
-            assert num_sample <= nb_cols
-            ### TODO: in some configurations M is not a matrix with booleans 
-            M = lil_matrix((nb_rows,nb_cols), dtype=bool)
-
-            
-        # Create a sparse, binary random projection matrix.
-        if projection_type == "SB":
-            for row in range(nb_rows):
-                # Sample NUM_SAMPLE random indices, set these to 1.
-                for idx in random.sample(range(nb_cols),num_sample):
-                    M[row,idx] = 1
-            # Make sure I didn't screw anything up!
-            #assert sum(M[row,:]) == num_sample  
-
-        # Create a sparse, binary random projection matrix.
-        # a feature can be chosen multiple times (choice with replacement)
-        elif projection_type =="SS":
-            for row in range(nb_rows):
-                for idx in random.choices(range(nb_cols),k=num_sample):
-                    M[row,idx] = 1
-
-
-        # Create a sparse, binary random projection matrix.
-        # a feature can be chosen multiple times + k is the mean value of connections
-        elif projection_type == "RK":
-            for trial in range(nb_rows*num_sample):
-                row = random.randrange(nb_rows)
-                col = random.randrange(nb_cols)
-                M[row,col] += 1
-
-
-        # Create a sparse, binary random projection matrix, with positive and negative values.
-        # a feature can be chosen multiple times + k is the mean value of connections
-        elif projection_type == "RL":
-            for trial in range(nb_rows*num_sample):
-                row = random.randrange(nb_rows)
-                col = random.randrange(nb_cols)
-                M[row,col] += random.choice([-1,1])
-
-        # Matrix entries are positive numbers between 0 and 1
-        elif projection_type == "SR": 
-            for row in range(nb_rows):
-                for idx in random.sample(range(nb_cols),num_sample):
-                    M[row,idx] = 0.1 * np.random.randn() +1 #1
-
-     
-        # Matrix entries are binary, 
-        # random number of non-zeros (fluctuating around num_sample)
-        elif projection_type == "SX":
-            delta = 4
-            min_val = max([num_sample - delta,1])
-            max_val = min([num_sample + delta, nb_cols])          
-            for row in range(nb_rows):
-                num_sample = np.random.randint(min_val, max_val + 1)
-                for idx in random.sample(range(nb_cols),num_sample):
-                    M[row,idx] = 1 #np.random.randn() #1
-        
-        # Matrix entries are positive integers between 0 and 1,
-        # random number of non-zeros (fluctuating around num_sample)
-        elif projection_type == "SZ":
-            delta = 4
-            min_val = max([num_sample - delta,1])
-            max_val = min([num_sample + delta, nb_cols])            
-            for row in range(nb_rows):
-                num_sample = np.random.randint(min_val, max_val + 1)
-                for idx in random.sample(range(nb_cols),num_sample):
-                    M[row,idx] = np.random.randint(1, num_sample + 1)
-
-        # Create a dense, Gaussian random projection matrix.
-        elif projection_type == "DG":
-            M = np.random.randn(nb_rows, nb_cols)
-            return M # M is a dense matrix
-
-        else:
-            ValueError('Wrong projection type: {}'.format(projection_type))
-
-        return M.tocoo() #M.tocsr()
     
     def infer_data(self, H):
         """
@@ -300,3 +215,92 @@ class OlfactoryModel():
         return a softmax classification matrix (formulas x classes)
         """
         pass
+
+
+
+
+def proj_matrix(nb_rows, nb_cols, projection_type, nb_proj_entries=None):
+    """ 
+    Creates a random projection matrix of size NUM_KENYON by NUM_PNS. 
+    """
+
+    if projection_type != 'DG': # DG does not need nb_proj_entries
+        num_sample = nb_proj_entries
+        assert nb_proj_entries is not None
+        assert num_sample <= nb_cols
+        ### TODO: in some configurations M is not a matrix with booleans 
+        M = lil_matrix((nb_rows,nb_cols), dtype=bool)
+
+        
+    # Create a sparse, binary random projection matrix.
+    if projection_type == "SB":
+        for row in range(nb_rows):
+            # Sample NUM_SAMPLE random indices, set these to 1.
+            for idx in random.sample(range(nb_cols),num_sample):
+                M[row,idx] = 1
+        # Make sure I didn't screw anything up!
+        #assert sum(M[row,:]) == num_sample  
+
+    # Create a sparse, binary random projection matrix.
+    # a feature can be chosen multiple times (choice with replacement)
+    elif projection_type =="SS":
+        for row in range(nb_rows):
+            for idx in random.choices(range(nb_cols),k=num_sample):
+                M[row,idx] = 1
+
+
+    # Create a sparse, binary random projection matrix.
+    # a feature can be chosen multiple times + k is the mean value of connections
+    elif projection_type == "RK":
+        for trial in range(nb_rows*num_sample):
+            row = random.randrange(nb_rows)
+            col = random.randrange(nb_cols)
+            M[row,col] += 1
+
+
+    # Create a sparse, binary random projection matrix, with positive and negative values.
+    # a feature can be chosen multiple times + k is the mean value of connections
+    elif projection_type == "RL":
+        for trial in range(nb_rows*num_sample):
+            row = random.randrange(nb_rows)
+            col = random.randrange(nb_cols)
+            M[row,col] += random.choice([-1,1])
+
+    # Matrix entries are positive numbers between 0 and 1
+    elif projection_type == "SR": 
+        for row in range(nb_rows):
+            for idx in random.sample(range(nb_cols),num_sample):
+                M[row,idx] = 0.1 * np.random.randn() +1 #1
+
+ 
+    # Matrix entries are binary, 
+    # random number of non-zeros (fluctuating around num_sample)
+    elif projection_type == "SX":
+        delta = 4
+        min_val = max([num_sample - delta,1])
+        max_val = min([num_sample + delta, nb_cols])          
+        for row in range(nb_rows):
+            num_sample = np.random.randint(min_val, max_val + 1)
+            for idx in random.sample(range(nb_cols),num_sample):
+                M[row,idx] = 1 #np.random.randn() #1
+    
+    # Matrix entries are positive integers between 0 and 1,
+    # random number of non-zeros (fluctuating around num_sample)
+    elif projection_type == "SZ":
+        delta = 4
+        min_val = max([num_sample - delta,1])
+        max_val = min([num_sample + delta, nb_cols])            
+        for row in range(nb_rows):
+            num_sample = np.random.randint(min_val, max_val + 1)
+            for idx in random.sample(range(nb_cols),num_sample):
+                M[row,idx] = np.random.randint(1, num_sample + 1)
+
+    # Create a dense, Gaussian random projection matrix.
+    elif projection_type == "DG":
+        M = np.random.randn(nb_rows, nb_cols)
+        return M # M is a dense matrix
+
+    else:
+        ValueError('Wrong projection type: {}'.format(projection_type))
+
+    return M.tocoo() #M.tocsr()
