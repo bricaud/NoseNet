@@ -65,16 +65,16 @@ class WTA(nn.Module):
 
 	return a pytorch sparse coo tensor
 	"""
-	__constants__ = ['k','dim']
+	__constants__ = ['active_outputs','dim']
 	k: int
 	dim: int
-	def __init__(self, k, dim=1):
+	def __init__(self, active_outputs, dim=1):
 		super(WTA, self).__init__()
-		self.k = k
+		self.active_outputs = active_outputs
 		self.dim = dim
 
 	def forward(self, x):
-		(valuesM, indicesM) = torch.topk(x, self.k, dim=self.dim)
+		(valuesM, indicesM) = torch.topk(x, self.active_outputs, dim=self.dim)
 		nb_values = indicesM.shape[0]*indicesM.shape[1]
 		values = np.zeros((1,nb_values))
 		indices = np.zeros((2,nb_values))
@@ -90,7 +90,7 @@ class WTA(nn.Module):
 		return torch.sparse_coo_tensor(indices, values[0,:], size=x.shape, dtype=torch.float32).to(x.device)
 
 	def extra_repr(self):
-		return 'k={}, dim={}'.format(self.k, self.dim)
+		return 'active_outputs={}, dim={}'.format(self.active_outputs, self.dim)
 
 
 class MB_projection(nn.Module):
@@ -99,11 +99,10 @@ class MB_projection(nn.Module):
 	Perform the projection into the mushroom body.
 	No learning is involved in this layer.
 	"""
-	__constants__ = ['in_features', 'out_features', 'nb_proj_entries', 'hash_length']
+	__constants__ = ['in_features', 'out_features', 'nb_proj_entries']
 	in_features: int
 	out_features: int
 	nb_proj_entries: int
-	hesh_length: int
 	weight: torch.Tensor
 	def __init__(self, params):
 		super(MB_projection, self).__init__()
@@ -121,9 +120,7 @@ class MB_projection(nn.Module):
 		self.out_features = self.MB_input_size * params['DIM_EXPLOSION_FACTOR']
 
 		self.nb_proj_entries = params['NB_PROJ_ENTRIES']
-		self.hash_length = params['HASH_LENGTH']
 		self.OM = nosenetF.OlfactoryModel(params)
-		self.WTA = WTA(k=self.hash_length)
 		self.MBweight = nn.Parameter(torch.sparse_coo_tensor(size=(self.out_features, self.MB_input_size)),
 									 requires_grad=False)
 		if self.AL_projection:
@@ -154,13 +151,12 @@ class MB_projection(nn.Module):
 			x = F.sigmoid(x)
 		#print(x.shape, self.MBweight.shape)
 		x = torch.sparse.mm(self.MBweight, x.t()).t().to(x.device)
-		x = self.WTA(x)
 		return x
 
 
 	def extra_repr(self):
-		return 'in_features={}, out_features={}, nb_proj_entries={}, hash_length={}, AL_layer={}'.format(
-			self.in_features, self.out_features, self.nb_proj_entries, self.hash_length, self.AL_projection
+		return 'in_features={}, out_features={}, nb_proj_entries={}, AL_layer={}'.format(
+			self.in_features, self.out_features, self.nb_proj_entries, self.AL_projection
 		)
 
 class NoseNet(nn.Module):
@@ -172,13 +168,16 @@ class NoseNet(nn.Module):
 		nb_out_features = int(params['NB_FEATURES'] * params['PNS_REDUCTION_FACTOR']) * params['DIM_EXPLOSION_FACTOR']
 		nb_classes = params['NB_CLASSES']
 		self.sparse_hebbian = params['sparse_hebbian']
-		self.projection = MB_projection(params)
+		self.hash_length = int(params['MB_ACTIVITY_RATIO'] * nb_out_features)
+		self.MB_projection = MB_projection(params)
 		#self.fc2 = WTA(params['HASH_LENGTH'])
+		self.WTA = WTA(active_outputs=self.hash_length)
 		self.hebbian = PositiveLinear(nb_out_features, nb_classes, sparse=self.sparse_hebbian)
 
 	def forward(self, x):
 		#x = x**(1/10)
-		x = self.projection(x)
+		x = self.MB_projection(x)
+		x = self.WTA(x)
 		#print(x)
 		x = self.hebbian(x)
 		#print(x)
