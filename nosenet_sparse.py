@@ -43,11 +43,11 @@ class PositiveLinear(nn.Module):
 			bound = 1 / math.sqrt(fan_in)
 			nn.init.uniform_(self.bias, -bound, bound)
 
-	def forward(self, input):
+	def forward(self, x):
 		self.weight.data = self.weight.data.clamp(min=0)
 		if self.sparse:
-			return torch.sparse.mm(input, self.weight.t())
-		return F.linear(input, self.weight, self.bias)
+			return torch.sparse.mm(x, self.weight.t())
+		return F.linear(x, self.weight, self.bias)
 	
 	def extra_repr(self):
 		return 'in_features={}, out_features={}, bias={}, sparse={}'.format(
@@ -60,13 +60,13 @@ class WTA(nn.Module):
 	implement winner take all with pytorch
 	
 	parameters: 
-	k: number of top values to return
+	active_outputs: number of top values to return
 	dim: dimension along which to perform the WTA
 
 	return a pytorch sparse coo tensor
 	"""
 	__constants__ = ['active_outputs','dim']
-	k: int
+	active_outputs: int
 	dim: int
 	def __init__(self, active_outputs, dim=1):
 		super(WTA, self).__init__()
@@ -75,15 +75,15 @@ class WTA(nn.Module):
 
 	def forward(self, x):
 		(valuesM, indicesM) = torch.topk(x, self.active_outputs, dim=self.dim)
-		nb_values = indicesM.shape[0]*indicesM.shape[1]
+		nb_values = indicesM.shape[0] * indicesM.shape[1]
 		values = np.zeros((1,nb_values))
 		indices = np.zeros((2,nb_values))
 		row_len = indicesM.shape[1]
+		indicesM = indicesM.cpu()
+		valuesM = valuesM.cpu()		
 		for row_idx in range(indicesM.shape[0]):
 			start = row_idx*row_len 
 			end = start + row_len
-			indicesM = indicesM.cpu()
-			valuesM = valuesM.cpu()
 			indices[1, start:end] = indicesM[row_idx,:]
 			indices[0, start:end] = np.repeat(row_idx,row_len)
 			values[0, start:end] = valuesM[row_idx,:]
@@ -107,7 +107,6 @@ class AL_projection(nn.Module):
 		super(AL_projection, self).__init__()
 		self.in_features = in_features
 		self.out_features = out_features
-
 		self.ALweight = nn.Parameter(torch.empty(self.out_features, self.in_features), requires_grad=False)
 		self.reset_parameters()
 
@@ -120,10 +119,9 @@ class AL_projection(nn.Module):
 		x = torch.matmul(self.ALweight, x.t()).t()
 		return x
 
-
 	def extra_repr(self):
-		return 'in_features={}, out_features={}'.format(
-			self.in_features, self.out_features)
+		return 'in_features={}, out_features={}'.format(self.in_features, self.out_features)
+
 
 
 class MB_projection(nn.Module):
@@ -145,7 +143,6 @@ class MB_projection(nn.Module):
 		self.out_features = self.in_features * self.dim_explosion
 		self.projection_type = projection_type
 		self.nb_proj_entries = nb_proj_entries
-
 		self.MBweight = nn.Parameter(torch.sparse_coo_tensor(size=(self.out_features, self.in_features)),
 									 requires_grad=False)
 		self.reset_parameters()
@@ -154,16 +151,11 @@ class MB_projection(nn.Module):
 		MB = nosenetF.proj_matrix(self.out_features, self.in_features, self.projection_type, self.nb_proj_entries)
 		values = MB.data
 		indices = np.vstack((MB.row, MB.col))
-		#i = torch.LongTensor(indices)
-		#v = torch.FloatTensor(values)
-		#shape = coo.shape
-		#torch.sparse.FloatTensor(i, v, torch.Size(shape)).to_dense()
 		self.MBweight.data = torch.sparse_coo_tensor(indices, values, (self.out_features, self.in_features), dtype=torch.float32)
 
 	def forward(self, x):
 		x = torch.sparse.mm(self.MBweight, x.t()).t().to(x.device)
 		return x
-
 
 	def extra_repr(self):
 		return 'in_features={}, out_features={}, projection_type={}, nb_proj_entries={}'.format(
@@ -193,11 +185,12 @@ class NoseNet(nn.Module):
 			self.MB_input_size = self.in_features
 		self.out_features = self.MB_input_size * params['DIM_EXPLOSION_FACTOR']
 		self.MB_projection = MB_projection(self.MB_input_size, params['DIM_EXPLOSION_FACTOR'],
-											params['PROJECTION_TYPE'],params['NB_PROJ_ENTRIES'])
-		#self.fc2 = WTA(params['HASH_LENGTH'])
+											params['PROJECTION_TYPE'], params['NB_PROJ_ENTRIES'])
 		self.hash_length = int(params['MB_ACTIVITY_RATIO'] * self.out_features)
-		self.WTA = WTA(active_outputs=self.hash_length)
+		self.WTA = WTA(active_outputs=self.hash_length, dim=1)
 		self.hebbian = PositiveLinear(self.out_features, nb_classes, sparse=self.sparse_hebbian)
+
+		#self.hebbian = PositiveLinear(self.MB_input_size, nb_classes, sparse=self.sparse_hebbian)
 
 	def forward(self, x):
 		#x = x**(1/10)
@@ -207,17 +200,10 @@ class NoseNet(nn.Module):
 			x = self.AL_projection(x)
 			# nonlinearity
 			x = torch.sigmoid(x)
-		#print('after AL', x.shape)
-		#print(np.isnan(np.sum(x.numpy())))
 		x = self.MB_projection(x)
-		#print('after MB', x.shape)
-		#print(np.isnan(np.sum(x.numpy())))
 		x = self.WTA(x)
-		#print('after WTA', x.shape)
 		x = self.hebbian(x)
-		#print('after hebbian', x.shape)
-		#print(x)
-		#x = torch.sigmoid(x)
+		x = torch.sigmoid(x)
 		return x
 
 class NoseNetDeep(nn.Module):
@@ -226,35 +212,31 @@ class NoseNetDeep(nn.Module):
 	"""
 	def __init__(self, params):
 		super(NoseNetDeep, self).__init__()
-		#nb_features = params['NB_FEATURES'] * params['DIM_EXPLOSION_FACTOR']
 		nb_classes = params['NB_CLASSES']
-		self.sparse_hebbian = params['sparse_hebbian']
-		#self.projection = MB_projection(params)
-		#self.fc2 = WTA(params['HASH_LENGTH'])
-		#reduction1 = max((nb_features//100, nb_classes))
-		#reduction2 = max((reduction1//2, nb_classes))
 		reduction1 = params['feedforward_layers'][0]
 		reduction2 = params['feedforward_layers'][1]
-
-		#self.hebbian = PositiveLinear(nb_features, reduction1, sparse=self.sparse_hebbian)
-		#
-		nosenet_params = params.copy()
-		nosenet_params['NB_CLASSES'] = reduction1
-		self.nosenet = NoseNet(nosenet_params)
-		#
-		self.fc3 = nn.Linear(reduction1, reduction2)
-		self.fc4 = nn.Linear(reduction2, nb_classes)
-		self.dropout = nn.Dropout(params['dropout'])
+		###
+		nosenet_requested = True #for testing without nosenet
+		if nosenet_requested:
+			nosenet_params = params.copy()
+			nosenet_params['NB_CLASSES'] = reduction1
+			self.nosenet = NoseNet(nosenet_params)
+		else:
+			self.nosenet = nn.Linear(params['NB_FEATURES'], reduction1)
+		###
+		self.fcx1 = nn.Linear(reduction1, reduction2)
+		self.dropout = nn.Dropout(params['dropout'])		
+		self.fcx2 = nn.Linear(reduction2, nb_classes)
 		#self.softmax = nn.Softmax(dim=1)
 
 	def forward(self, x):
 		#x = self.projection(x)
 		#print(x)
 		x = F.relu6(self.nosenet(x)*6)/6
-		x = F.relu(self.fc3(x))
-		#x = self.dropout(x)
-		x = self.fc4(x)
+		x = F.relu(self.fcx1(x))
+		x = self.dropout(x)
+		x = self.fcx2(x)
 		#x = self.softmax(x)
 		#print(x)
-		x = torch.sigmoid(x)
+		#x = torch.sigmoid(x)
 		return x
