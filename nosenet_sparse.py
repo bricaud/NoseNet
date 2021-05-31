@@ -232,5 +232,5 @@ class NoseNetDeep(nn.Module):
 		x = self.fcx2(x)
 		#x = self.softmax(x)
 		#print(x)
-		x = torch.sigmoid(x)
+		#x = torch.sigmoid(x)
 		return x
