@@ -199,7 +199,7 @@ class NoseNet(nn.Module):
 		x = self.MB_projection(x)
 		x = self.WTA(x)
 		x = self.hebbian(x)
-		#x = torch.sigmoid(x)
+		#x = (torch.sigmoid(x) - 1/2) * 2
 		return x
 
 class NoseNetDeep(nn.Module):
@@ -226,7 +226,8 @@ class NoseNetDeep(nn.Module):
 		#self.softmax = nn.Softmax(dim=1)
 
 	def forward(self, x):
-		x = F.relu6(self.nosenet(x)*6)/6
+		#x = F.relu6(self.nosenet(x)*6)/6
+		x = self.nosenet(x)
 		x = F.relu(self.fcx1(x))
 		x = self.dropout(x)
 		x = self.fcx2(x)
