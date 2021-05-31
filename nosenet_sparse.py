@@ -95,8 +95,8 @@ class WTA(nn.Module):
 
 class AL_projection(nn.Module):
 	""" 
-	MB projection Neural net
-	Perform the projection into the mushroom body.
+	AL projection, model the Antenna Lobe projection to the PNs
+	Perform a random projection before the mushroom body.
 	No learning is involved in this layer.
 	"""
 	__constants__ = ['in_features', 'out_features']
@@ -112,7 +112,6 @@ class AL_projection(nn.Module):
 
 	def reset_parameters(self):
 		AL = nosenetF.proj_matrix(self.out_features, self.in_features, 'DG')
-		#print(np.isnan(np.sum(AL.numpy())))
 		self.ALweight.data = torch.from_numpy(AL).type(torch.FloatTensor)
 
 	def forward(self, x):
@@ -193,22 +192,19 @@ class NoseNet(nn.Module):
 		#self.hebbian = PositiveLinear(self.MB_input_size, nb_classes, sparse=self.sparse_hebbian)
 
 	def forward(self, x):
-		#x = x**(1/10)
 		if self.AL_requested:
-			#print('input',x.shape)
-			#print(np.isnan(np.sum(x.numpy())))
 			x = self.AL_projection(x)
 			# nonlinearity
 			x = torch.sigmoid(x)
 		x = self.MB_projection(x)
 		x = self.WTA(x)
 		x = self.hebbian(x)
-		#x = torch.sigmoid(x)
+		x = torch.sigmoid(x)
 		return x
 
 class NoseNetDeep(nn.Module):
 	"""
-	Nosenet neural network
+	Nosenet neural network with additional fully connected layers
 	"""
 	def __init__(self, params):
 		super(NoseNetDeep, self).__init__()
@@ -230,13 +226,11 @@ class NoseNetDeep(nn.Module):
 		#self.softmax = nn.Softmax(dim=1)
 
 	def forward(self, x):
-		#x = self.projection(x)
-		#print(x)
 		x = F.relu6(self.nosenet(x)*6)/6
 		x = F.relu(self.fcx1(x))
 		x = self.dropout(x)
 		x = self.fcx2(x)
 		#x = self.softmax(x)
 		#print(x)
-		#x = torch.sigmoid(x)
+		x = torch.sigmoid(x)
 		return x
