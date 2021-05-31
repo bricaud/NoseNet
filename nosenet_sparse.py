@@ -199,7 +199,7 @@ class NoseNet(nn.Module):
 		x = self.MB_projection(x)
 		x = self.WTA(x)
 		x = self.hebbian(x)
-		x = torch.sigmoid(x)
+		#x = torch.sigmoid(x)
 		return x
 
 class NoseNetDeep(nn.Module):
@@ -232,5 +232,5 @@ class NoseNetDeep(nn.Module):
 		x = self.fcx2(x)
 		#x = self.softmax(x)
 		#print(x)
-		#x = torch.sigmoid(x)
+		x = torch.sigmoid(x)
 		return x
