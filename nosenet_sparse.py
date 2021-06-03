@@ -210,8 +210,9 @@ class NoseNetDeep(nn.Module):
 		super(NoseNetDeep, self).__init__()
 		nb_classes = params['NB_CLASSES']
 		reduction1 = params['feedforward_layers'][0]
-		reduction2 = params['feedforward_layers'][1]
-		###
+		#reduction2 = params['feedforward_layers'][1]
+		
+		### First layer is nosenet
 		nosenet_requested = True #for testing without nosenet
 		if nosenet_requested:
 			nosenet_params = params.copy()
@@ -219,18 +220,28 @@ class NoseNetDeep(nn.Module):
 			self.nosenet = NoseNet(nosenet_params)
 		else:
 			self.nosenet = nn.Linear(params['NB_FEATURES'], reduction1)
-		###
-		self.fcx1 = nn.Linear(reduction1, reduction2)
+		### Next layers are linear layers, fully connected
+		layer_specs = params['feedforward_layers'] + [params['NB_CLASSES']]
+		self.linear_layers = nn.ModuleList([
+			nn.Linear(layer_specs[i], layer_specs[i+1]) for i in range(len(layer_specs) - 1)
+			])
+		#self.fcx1 = nn.Linear(reduction1, reduction2)
 		self.dropout = nn.Dropout(params['dropout'])		
-		self.fcx2 = nn.Linear(reduction2, nb_classes)
+		#self.fcx2 = nn.Linear(reduction2, nb_classes)
 		#self.softmax = nn.Softmax(dim=1)
 
 	def forward(self, x):
 		#x = F.relu6(self.nosenet(x)*6)/6
 		x = self.nosenet(x)
-		x = F.relu(self.fcx1(x))
-		x = self.dropout(x)
-		x = self.fcx2(x)
+		for lin in self.linear_layers[:-1]:
+			x = lin(x)
+			x = F.leaky_relu(x)
+			x = self.dropout(x)
+		x = self.linear_layers[-1](x)
+
+		#x = F.relu(self.fcx1(x))
+		#x = self.dropout(x)
+		#x = self.fcx2(x)
 		#x = self.softmax(x)
 		#print(x)
 		x = torch.sigmoid(x)
