@@ -16,16 +16,18 @@ class PositiveLinear(nn.Module):
 
 	Bias is not used when sparse is True.
 	"""
-	__constants__ = ['in_features', 'out_features', 'sparse']
+	__constants__ = ['in_features', 'out_features', 'sparse', 'positive']
 	in_features: int
 	out_features: int
 	sparse: bool
+	positive: bool
 	weight: torch.Tensor
-	def __init__(self, in_features, out_features, sparse=False):
+	def __init__(self, in_features, out_features, sparse=False, positive=True):
 		super(PositiveLinear, self).__init__()
 		self.in_features = in_features
 		self.out_features = out_features
 		self.sparse = sparse
+		self.positive = positive
 		self.weight = nn.Parameter(torch.Tensor(out_features, in_features))
 		if sparse: # no bias when sparse
 			self.register_parameter('bias', None)
@@ -44,14 +46,15 @@ class PositiveLinear(nn.Module):
 			nn.init.uniform_(self.bias, -bound, bound)
 
 	def forward(self, x):
-		self.weight.data = self.weight.data.clamp(min=0)
+		if self.positive:
+			self.weight.data = self.weight.data.clamp(min=0)
 		if self.sparse:
 			return torch.sparse.mm(x, self.weight.t())
 		return F.linear(x, self.weight, self.bias)
 	
 	def extra_repr(self):
-		return 'in_features={}, out_features={}, bias={}, sparse={}'.format(
-			self.in_features, self.out_features, self.bias is not None, self.sparse
+		return 'in_features={}, out_features={}, bias={}, sparse={}, positive={}'.format(
+			self.in_features, self.out_features, self.bias is not None, self.sparse, self.positive
 		)
 
 
@@ -168,7 +171,7 @@ class NoseNet(nn.Module):
 	def __init__(self, params):
 		super(NoseNet, self).__init__()
 		self.in_features = params['NB_FEATURES']
-		nb_classes = params['NB_CLASSES']
+		#nb_classes = params['NB_CLASSES']
 		self.sparse_hebbian = params['sparse_hebbian']
 		self.AL_requested = params['AL_projection']
 
@@ -187,7 +190,7 @@ class NoseNet(nn.Module):
 											params['PROJECTION_TYPE'], params['NB_PROJ_ENTRIES'])
 		self.hash_length = int(params['MB_ACTIVITY_RATIO'] * self.out_features)
 		self.WTA = WTA(active_outputs=self.hash_length, dim=1)
-		self.hebbian = PositiveLinear(self.out_features, nb_classes, sparse=self.sparse_hebbian)
+		#self.hebbian = PositiveLinear(self.out_features, nb_classes, sparse=self.sparse_hebbian)
 
 		#self.hebbian = PositiveLinear(self.MB_input_size, nb_classes, sparse=self.sparse_hebbian)
 
@@ -198,9 +201,12 @@ class NoseNet(nn.Module):
 			x = torch.sigmoid(x)
 		x = self.MB_projection(x)
 		x = self.WTA(x)
-		x = self.hebbian(x)
+		#x = self.hebbian(x)
 		#x = (torch.sigmoid(x) - 1/2) * 2
 		return x
+
+	def output_size(self):
+		return self.out_features
 
 class NoseNetDeep(nn.Module):
 	"""
@@ -208,22 +214,28 @@ class NoseNetDeep(nn.Module):
 	"""
 	def __init__(self, params):
 		super(NoseNetDeep, self).__init__()
-		nb_classes = params['NB_CLASSES']
-		reduction1 = params['feedforward_layers'][0]
-		#reduction2 = params['feedforward_layers'][1]
+		#nb_classes = params['NB_CLASSES']
+		#reduction1 = params['feedforward_layers'][0]
+
 		
 		### First layer is nosenet
-		nosenet_requested = True #for testing without nosenet
-		if nosenet_requested:
+		self.nosenet_requested = True #change if testing without nosenet
+		if self.nosenet_requested:
 			nosenet_params = params.copy()
-			nosenet_params['NB_CLASSES'] = reduction1
+			#nosenet_params['NB_CLASSES'] = reduction1
 			self.nosenet = NoseNet(nosenet_params)
+			first_nn_input_size = self.nosenet.output_size()
 		else:
-			self.nosenet = nn.Linear(params['NB_FEATURES'], reduction1)
+			#self.nosenet = nn.Linear(params['NB_FEATURES'], reduction1)
+			first_nn_input_size = params['NB_FEATURES']
 		### Next layers are linear layers, fully connected
-		layer_specs = params['feedforward_layers'] + [params['NB_CLASSES']]
+		self.positive = params['positive']
+		self.sparse_hebbian = params['sparse_hebbian']
+		layer_specs = [first_nn_input_size] + params['feedforward_layers'] + [params['NB_CLASSES']]
 		self.linear_layers = nn.ModuleList([
-			nn.Linear(layer_specs[i], layer_specs[i+1]) for i in range(len(layer_specs) - 1)
+			PositiveLinear(layer_specs[i], layer_specs[i+1], sparse=self.sparse_hebbian,
+				positive=self.positive
+				) for i in range(len(layer_specs) - 1)
 			])
 		#self.fcx1 = nn.Linear(reduction1, reduction2)
 		self.dropout = nn.Dropout(params['dropout'])		
@@ -232,7 +244,8 @@ class NoseNetDeep(nn.Module):
 
 	def forward(self, x):
 		#x = F.relu6(self.nosenet(x)*6)/6
-		x = self.nosenet(x)
+		if self.nosenet_requested:
+			x = self.nosenet(x)
 		for lin in self.linear_layers[:-1]:
 			x = lin(x)
 			x = F.leaky_relu(x)
